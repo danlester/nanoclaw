@@ -46,8 +46,14 @@ vi.mock('fs', async () => {
   };
 });
 
+// Mock env
+vi.mock('./env.js', () => ({
+  readEnvFile: vi.fn(() => ({})),
+}));
+
 // Mock mount-security
 vi.mock('./mount-security.js', () => ({
+  loadMountAllowlist: vi.fn(() => null),
   validateAdditionalMounts: vi.fn(() => []),
 }));
 
