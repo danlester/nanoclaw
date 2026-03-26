@@ -26,7 +26,8 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
-import { validateAdditionalMounts } from './mount-security.js';
+import { readEnvFile } from './env.js';
+import { loadMountAllowlist, validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
@@ -199,6 +200,17 @@ function buildVolumeMounts(
     readonly: false,
   });
 
+  // Default mounts from the allowlist (applied to all containers)
+  const allowlist = loadMountAllowlist();
+  if (allowlist?.defaultMounts) {
+    const validatedDefaults = validateAdditionalMounts(
+      allowlist.defaultMounts,
+      group.name,
+      isMain,
+    );
+    mounts.push(...validatedDefaults);
+  }
+
   // Additional mounts validated against external allowlist (tamper-proof from containers)
   if (group.containerConfig?.additionalMounts) {
     const validatedMounts = validateAdditionalMounts(
@@ -236,6 +248,20 @@ function buildContainerArgs(
     args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
   } else {
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
+  }
+
+  // Pass tool credentials if configured (for CLI tools inside containers)
+  const envVars = readEnvFile(['GH_TOKEN']);
+  if (envVars.GH_TOKEN) {
+    args.push('-e', `GH_TOKEN=${envVars.GH_TOKEN}`);
+  }
+
+  // Mount persistent gws config directory (read-write) and use file-based
+  // encryption since containers have no OS keyring
+  const gwsConfigDir = path.join(DATA_DIR, 'gws-config');
+  if (fs.existsSync(gwsConfigDir)) {
+    args.push('-v', `${gwsConfigDir}:/home/node/.config/gws`);
+    args.push('-e', 'GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file');
   }
 
   // Runtime-specific args for host gateway resolution
