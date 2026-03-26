@@ -27,7 +27,10 @@ import {
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
 import { readEnvFile } from './env.js';
-import { loadMountAllowlist, validateAdditionalMounts } from './mount-security.js';
+import {
+  loadMountAllowlist,
+  validateAdditionalMounts,
+} from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
@@ -200,6 +203,15 @@ function buildVolumeMounts(
     readonly: false,
   });
 
+  // Persistent mail directory (shared across all containers, survives rebuilds)
+  const mailDir = path.join(DATA_DIR, 'mail');
+  fs.mkdirSync(mailDir, { recursive: true });
+  mounts.push({
+    hostPath: mailDir,
+    containerPath: '/data/mail',
+    readonly: false,
+  });
+
   // Default mounts from the allowlist (applied to all containers)
   const allowlist = loadMountAllowlist();
   if (allowlist?.defaultMounts) {
@@ -251,9 +263,32 @@ function buildContainerArgs(
   }
 
   // Pass tool credentials if configured (for CLI tools inside containers)
-  const envVars = readEnvFile(['GH_TOKEN']);
+  const envVars = readEnvFile([
+    'GH_TOKEN',
+    'IMAP_HOST',
+    'IMAP_PORT',
+    'SMTP_HOST',
+    'SMTP_PORT',
+    'EMAIL_USER',
+    'EMAIL_PASS',
+  ]);
   if (envVars.GH_TOKEN) {
     args.push('-e', `GH_TOKEN=${envVars.GH_TOKEN}`);
+  }
+
+  // Pass email credentials for mbsync/himalaya/notmuch (setup-email.sh reads these)
+  const emailKeys = [
+    'IMAP_HOST',
+    'IMAP_PORT',
+    'SMTP_HOST',
+    'SMTP_PORT',
+    'EMAIL_USER',
+    'EMAIL_PASS',
+  ] as const;
+  for (const key of emailKeys) {
+    if (envVars[key]) {
+      args.push('-e', `${key}=${envVars[key]}`);
+    }
   }
 
   // Mount persistent gws config directory (read-write) and use file-based

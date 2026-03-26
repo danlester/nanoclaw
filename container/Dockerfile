@@ -24,7 +24,16 @@ RUN apt-get update && apt-get install -y \
     libxshmfence1 \
     curl \
     git \
+    isync \
+    notmuch \
     && rm -rf /var/lib/apt/lists/*
+
+# Install himalaya CLI (email client backed by local Maildir)
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then HARCH="x86_64"; else HARCH="aarch64"; fi && \
+    curl -fsSL "https://github.com/pimalaya/himalaya/releases/latest/download/himalaya.linux-${HARCH}.tar.gz" \
+    | tar xz -C /usr/local/bin himalaya && \
+    chmod +x /usr/local/bin/himalaya
 
 # Install GitHub CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -55,17 +64,21 @@ COPY agent-runner/ ./
 # Build TypeScript
 RUN npm run build
 
-# Create workspace directories
-RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/messages /workspace/ipc/tasks /workspace/ipc/input
+# Copy email setup script (generates configs from env vars at runtime)
+COPY setup-email.sh /app/setup-email.sh
+RUN chmod +x /app/setup-email.sh
+
+# Create workspace and mail directories
+RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/messages /workspace/ipc/tasks /workspace/ipc/input /data/mail
 
 # Create entrypoint script
 # Container input (prompt, group info) is passed via stdin JSON.
 # Credentials are injected by the host's credential proxy — never passed here.
 # Follow-up messages arrive via IPC files in /workspace/ipc/input/
-RUN printf '#!/bin/bash\nset -e\ncd /app && npx tsc --outDir /tmp/dist 2>&1 >&2\nln -s /app/node_modules /tmp/dist/node_modules\nchmod -R a-w /tmp/dist\ncat > /tmp/input.json\nnode /tmp/dist/index.js < /tmp/input.json\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+RUN printf '#!/bin/bash\nset -e\n/app/setup-email.sh 2>&1 >&2\ncd /app && npx tsc --outDir /tmp/dist 2>&1 >&2\nln -s /app/node_modules /tmp/dist/node_modules\nchmod -R a-w /tmp/dist\ncat > /tmp/input.json\nnode /tmp/dist/index.js < /tmp/input.json\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Set ownership to node user (non-root) for writable directories
-RUN chown -R node:node /workspace && chmod 777 /home/node
+RUN chown -R node:node /workspace /data/mail && chmod 777 /home/node
 
 # Switch to non-root user (required for --dangerously-skip-permissions)
 USER node
