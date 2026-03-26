@@ -31,7 +31,7 @@ RUN apt-get update && apt-get install -y \
 # Install himalaya CLI (email client backed by local Maildir)
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "amd64" ]; then HARCH="x86_64"; else HARCH="aarch64"; fi && \
-    curl -fsSL "https://github.com/pimalaya/himalaya/releases/latest/download/himalaya.linux-${HARCH}.tar.gz" \
+    curl -fsSL "https://github.com/pimalaya/himalaya/releases/download/v1.2.0/himalaya.${HARCH}-linux.tgz" \
     | tar xz -C /usr/local/bin himalaya && \
     chmod +x /usr/local/bin/himalaya
 
